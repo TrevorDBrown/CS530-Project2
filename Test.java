@@ -9,6 +9,7 @@ public class HelloWorld {
 
         /*
             This is a test comment in a file.
+            "Can you handle this without issue?"
         */
 
         test = 3;
