@@ -38,24 +38,42 @@ class JavaSourceCodeLexicalAnalyzer:
     # loadTokens - loads in the predefined tokens from the tokens.json file.
     def __loadTokens(self):
         tokensFilename = "tokens.json"
+        tokensRawContent = ""
 
         try:
             with open(tokensFilename) as f:
-                self.__predefinedTokens = json.load(f)
+                tokensRawContent = json.load(f)
+                f.close()
 
         except Exception as e:
             print(e)
             return False
         
+        if (tokensRawContent != ""):
+            for entry in tokensRawContent:
+                tokenName = entry["type"]
+                tokenDisplayMode = entry["displayMode"]
+
+                for value in entry["values"]:
+                    newToken = Token(value, tokenName)
+                    goodTokenVisibilityMode = newToken.setTokenVisibilityMode(tokenDisplayMode)
+
+                    if (goodTokenVisibilityMode):
+                        self.__predefinedTokens.append(newToken)
+                    else:
+                        print("Error - bad token visibility mode: %s (token type: %s, token value: %s)" % (tokenDisplayMode, tokenName, value))
+        
         return True
 
     # searchPredefinedTokens - searches the list of predefined tokens using a provided target lexeme.
     def __searchPredefinedTokens(self, targetLexeme):
-        for entry in self.__predefinedTokens:
-            if targetLexeme in entry["values"]:
-                return entry["type"], entry["printType"], entry["printTypeValues"]
-        
-        return "", False, False
+        # Lambda function checks against all entries in the predefined tokens list for a match. If no match is found, return an empty Token.
+        resultsOfSearch = list(filter(lambda entry: entry.getTokenValue() == targetLexeme, self.__predefinedTokens))
+
+        if (len(resultsOfSearch) > 0):
+            return resultsOfSearch[0]
+        else:
+            return Token("", "")
 
     # readJavaSourceFile - read the specified Java source code file, and store its file content in memory.
     def __readJavaSourceFile(self):
@@ -75,6 +93,15 @@ class JavaSourceCodeLexicalAnalyzer:
     # extractLexemes - parses the provided file contents, and splits all words, characters, etc. into lexemes
     def __extractLexemes(self):
         # Regular Expression used to split the string into usable units (lexemes)
+        # Split by:
+        #   - Regular Words (alphanumeric combinations)
+        #   - Words with intermittent dots (i.e. Word.Word.Word, Word.Word, Word.)
+        #   - Numerics (integers, decimals)
+        #   - Comment Block Characters (/*, */)
+        #   - Symbol combinations (logical symbols, mathematical symbols, colon, semicolon)
+        #   - Literals (double and single quotes)
+        #   - Formatting characters (New lines, tabs)
+        #   - Brackets ({, }, (, ), [, ])
         splittingRegularExpression = "(\/\*|\*\/)|(\=|\+|-|\*|\/|\%|\!|\>|\<)+|( )|(\"|\')|(\(|\))|(\{|\})|(\[|\])|(\,|\;|\:)|((?<=[A-Za-z])\.)|(\n|\t)"
         initialLexemeExtract = re.split(splittingRegularExpression, self.__sourceFileContent)
 
@@ -82,61 +109,27 @@ class JavaSourceCodeLexicalAnalyzer:
             newLexeme = Token(entry, "")
             self.__fileLexemes.append(newLexeme)
 
-        # # For each unit found, determine if a combination should be performed, a split, or kept as is.
-        # for i, entry in enumerate(initialLexemeExtract):
-        #     currentLexemeType, printType, printTypeValues = self.__searchPredefinedTokens(entry)
-
-        #     # If the current lexeme type is not a text formatting character, proceed.
-        #     if (currentLexemeType != "textFormattingCharacters" and (entry != None)):
-        #         periodIndex = entry.find(".")
-
-        #         # If the current lexeme contains a ".", determine if it is a legitimate float value, or a string with dots.
-        #         if (periodIndex >= 0):
-        #             try:
-        #                 # Attempt to convert the lexeme into a float.
-        #                 # If it succeeds, store the entry as a singular lexeme
-        #                 floatTest = float(entry)
-        #                 newLexeme = Token(entry, "")
-
-        #                 self.__fileLexemes.append(newLexeme)
-
-        #             except Exception as e:
-        #                 # If the lexeme fails the float conversion, assume it is an alphanumeric representing a variable,
-        #                 # Split the lexeme based on word grouping. 
-        #                 wordSplit = re.split("([^a-zA-Z0-9//*/\*])", entry)
-
-        #                 # Store each split value as a new lexeme
-        #                 for word in wordSplit:
-        #                     newLexeme = Token(word, "")
-        #                     self.__fileLexemes.append(newLexeme)
-        #         else:
-        #             # If the lexeme does not contain a period, store the lexeme "as is".
-        #             newLexeme = Token(entry, "")
-        #             self.__fileLexemes.append(newLexeme)
-        #     else:
-        #         newLexeme = Token(entry, "")
-        #         newLexeme.setTokenType(currentLexemeType)
-        #         self.__fileLexemes.append(newLexeme)
-    
     # identifyTokens - parse the file content, and identify the tokens within the file.
     def __identifyTokens(self):
         # Flags that determine if the current lexeme should be ignored/skipped.
         inQuotes = False            # inQuotes - a flag to indicate if the current lexeme should be considered a part of a literal.
         inCommentBlock = False      # inCommentBlock - a flag to indicate if the current lexeme should be considered a part of a comment block (i.e. ignored).
 
+        currentProgressBarCharacter = "|"
+
         # Loop through all extracted lexemes.
         for lexeme in self.__fileLexemes:
             if (lexeme.getTokenValue() != None):
-                currentTokenType, printType, printTypeValues = self.__searchPredefinedTokens(lexeme.getTokenValue())
+                predefinedTokenMatch = self.__searchPredefinedTokens(lexeme.getTokenValue())
 
                 # If the token is not a text formatting character (i.e. space, tab, new line, carriage return, etc.) and the lexeme length is longer than 0 (i.e. not null),
                 # proceed with the further checks.
                 # Otherwise, ignore the entry as a token.
-                if ((currentTokenType != "textFormattingCharacters") and (len(lexeme.getTokenValue()) > 0)):
+                if ((predefinedTokenMatch.getTokenType() != "textFormattingCharacters") and (len(lexeme.getTokenValue()) > 0)):
                     # If the lexeme is identified as a commentBlock token, 
                     # check and see if we need to either enter or exit a comment block.
                     # Set the inCommentBlock flag accordingly.
-                    if (currentTokenType == "commentBlock"):
+                    if (predefinedTokenMatch.getTokenType() == "commentBlock"):
                         if (inCommentBlock):
                             inCommentBlock = False
                         else:
@@ -148,12 +141,12 @@ class JavaSourceCodeLexicalAnalyzer:
                             # If the lexeme is identified as a doubleQuotes token,
                             # check and see if we need to either enter or exit a literal.
                             # Set the inQuotes flag accordingly.
-                            if (currentTokenType == "doubleQuotes"):
+                            if (predefinedTokenMatch.getTokenType() == "doubleQuotes"):
                                 if (inQuotes):
                                     inQuotes = False
 
                                     lexeme.setTokenType("literal")
-                                    lexeme.setTokenValueVisibility(False)
+                                    lexeme.setTokenVisibilityMode("Token")
 
                                     self.__fileTokens.append(lexeme)
                                 else:
@@ -164,18 +157,10 @@ class JavaSourceCodeLexicalAnalyzer:
                                 if (not inQuotes):
                                     # If the token type was found in the predefined tokens list, store it.
                                     # Otherwise, the lexeme is either a variable or a numeric type. Identify it and store.
-                                    if (currentTokenType != ""):
-                                        # switch statements are not available in Python :/. Alas, we must use if/elif/else...
-                                        # If the printType and printTypeValues flags are both set, store the token type as the lexeme itself,
-                                        # and set the token value visibility flag as True.
-                                        if (printType and printTypeValues):
-                                            lexeme.setTokenType(currentTokenType)
-                                            lexeme.setTokenValueVisibility(True)
-                                        # If the printType flag is set, but the printTypeValues flag is not, 
-                                        # store the token type as the found token type, and set the token value visibility flag to False.
-                                        elif (printType and not printTypeValues):
-                                            lexeme.setTokenType(currentTokenType)
-                                            lexeme.setTokenValueVisibility(False)
+                                    if (predefinedTokenMatch.getTokenType() != ""):
+                                        # Set the lexeme's token type and visibility mode, based on the found predefined token                                        
+                                        lexeme.setTokenType(predefinedTokenMatch.getTokenType())
+                                        lexeme.setTokenVisibilityMode(predefinedTokenMatch.getTokenVisibilityMode())
 
                                         # Add the Token object (current a lexeme) to the file tokens list.
                                         self.__fileTokens.append(lexeme)
@@ -188,7 +173,7 @@ class JavaSourceCodeLexicalAnalyzer:
                                             intTest = int(lexeme.getTokenValue())
 
                                             lexeme.setTokenType("intVal")
-                                            lexeme.setTokenValueVisibility(False)
+                                            lexeme.setTokenVisibilityMode("Token")
 
                                             self.__fileTokens.append(lexeme)
                                         except:
@@ -199,19 +184,20 @@ class JavaSourceCodeLexicalAnalyzer:
                                                 floatTest = float(lexeme.getTokenValue())
 
                                                 lexeme.setTokenType("doubleVal")
-                                                lexeme.setTokenValueVisibility(False)
+                                                lexeme.setTokenVisibilityMode("Token")
 
                                                 self.__fileTokens.append(lexeme)
                                             except:
                                                 # The provided lexeme is not numeric, and has not been identified as any other token type.
                                                 # Treat lexeme as a variable token.
                                                 lexeme.setTokenType("var")
-                                                lexeme.setTokenValueVisibility(False)
+                                                lexeme.setTokenVisibilityMode("Token")
 
                                                 self.__fileTokens.append(lexeme)
                 else:
-                    lexeme.setTokenType("textFormattingCharacters")
-                    self.__fileTokens.append(lexeme)
+                    if (not inCommentBlock and not inQuotes):
+                        lexeme.setTokenType("textFormattingCharacters")
+                        self.__fileTokens.append(lexeme)
         
         return True
 
@@ -236,65 +222,67 @@ class JavaSourceCodeLexicalAnalyzer:
 
     # printSourceFile - prints the raw source file content, unadulterated.
     def printSourceFile(self):
-        print("File Contents of %s:" % (self.__sourceFilename))
+        print("\nFile Contents of %s:" % (self.__sourceFilename))
         print(self.__sourceFileContent)
 
     # printAnalyzedFile - prints the tokenized file, but formatted as close as possible to the source file (for easier comparison)
     def printAnalyzedFile(self):
-        print("Analysis of %s:" % (self.__sourceFilename))
+        print("\nAnalysis of %s:" % (self.__sourceFilename))
 
         for i, entry in enumerate(self.__fileTokens):
-            if (i < len(self.__fileTokens) - 1):
-                if (entry.getTokenValueVisibility()):
-                    print(entry.getTokenValue(), end="")
-                else:
-                    print(entry.getTokenType(), end="")
+            displayValue = entry.getTokenValueToDisplay()
+            
+            if (i < len(self.__fileTokens) - 2):
+                if (displayValue != ""):
+                    print(displayValue, end="")
             else:
-                if (entry.getTokenValueVisibility()):
-                    print(entry.getTokenValue())
-                else:
-                    print(entry.getTokenType())
+                if (displayValue != ""):
+                    print(displayValue)
 
     # printFileTokens - prints the tokenized file as a singular string, delimited by space.
     def printFileTokens(self):
         print("\nTokens of %s:" % (self.__sourceFilename))
         print("w =", end=" ")
         for entry in self.__fileTokens:
+            displayValue = entry.getTokenValueToDisplay()
+
             if (entry.getTokenType() != "textFormattingCharacters"):
-                if (entry.getTokenValueVisibility()):
-                    print(entry.getTokenValue(), end=" ")
-                else:
-                    print(entry.getTokenType(), end=" ")
+                if (displayValue != ""):
+                    print(displayValue, end=" ")
+        
+        print("\n")
     
     # printPredefinedTokens - for troubleshooting, prints the stringified JSON content of tokens.json for comparison.
     def __printPredefinedTokens(self):
+        print("\nPredefined Tokens:")
         for entry in self.__predefinedTokens:
-            print(entry)
+            entry.print()
     
     # printExtractedLexemes - for troubleshooting, prints the lexemes identified within the source file.
     def __printExtractedLexemes(self):
-        print("Extracted Lexemes:")
+        print("\nExtracted Lexemes:")
         for entry in self.__fileLexemes:
             entry.print()
 
     # printExtractedTokens - for troubleshooting, prints the tokens identified within the source file.
     def __printExtractedTokens(self):
-        print("Extracted Tokens:")
+        print("\nExtracted Tokens:")
         for entry in self.__fileTokens:
             entry.print()
+            
 
 # Token - an object representing a Lexeme/Token, and its attributes.
 class Token:
     # Attributes
-    __tokenValue = ""        # The literal value of the lexeme
-    __tokenType = ""         # The token type identified for the lexeme
-    __displayAsValue = True  # A flag which determines if the Token should be displayed as its literal value or its token type.
+    __tokenValue = ""           # The literal value of the lexeme
+    __tokenType = ""            # The token type identified for the lexeme
+    __displayMode = "Value"     # A flag which determines if the Token should be displayed as its literal value or its token type.
 
     # Constructor
     def __init__(self, newValue, newTokenType):
         self.__tokenValue = newValue            # Store the new value of the lexeme/token
         self.__tokenType = newTokenType         # Store the token type (or blank)
-        self.__displayAsValue = True            # Assume that all tokens are displayed by their value (i.e. Lexeme value)
+        self.__displayMode = "Value"            # Assume that all tokens are displayed by their value (i.e. Lexeme value)
 
     # getTokenValue - returns the token/lexeme literal value
     def getTokenValue(self):
@@ -308,17 +296,31 @@ class Token:
     def getTokenType(self):
         return self.__tokenType
 
-    # setTokenValueVisibility - sets the lexeme/token's value visibility (i.e. display the lexeme/token by its literal value or token type)
-    def setTokenValueVisibility(self, tokenValueVisibility):
-        self.__displayAsValue = tokenValueVisibility
+    # setTokenVisibilityMode - sets the lexeme/token's visibility mode (i.e. display the lexeme/token by its literal value or token type)
+    def setTokenVisibilityMode(self, tokenValueVisibility):
+        if ("Token,Value,None".find(tokenValueVisibility) >= 0):
+            self.__displayMode = tokenValueVisibility
+            return True
+        else:
+            print("Error - invalid token display mode: %s" % (tokenValueVisibility))
+            return False
 
-    # getTokenValueVisibility - returns the lexem/token's value visibility
-    def getTokenValueVisibility(self):
-        return self.__displayAsValue
+    # getTokenVisibilityMode - returns the lexeme/token's visibility mode
+    def getTokenVisibilityMode(self):
+        return self.__displayMode
+
+    # getTokenValueToDisplay - returns the preferred display value of the token.
+    def getTokenValueToDisplay(self):
+        if (self.__displayMode == "Token"):
+            return self.getTokenType()
+        elif (self.__displayMode == "Value"):
+            return self.getTokenValue()
+        else:
+            return ""
     
     # print - printst the token in a formatted fashion.
     def print(self):
-        print("{tokenValue: %s, tokenType: %s, displayAsValue: %s}" % (repr(self.__tokenValue), self.__tokenType, str(self.__displayAsValue)))
+        print("{tokenValue: %s, tokenType: %s, displayMode: %s}" % (repr(self.__tokenValue), self.__tokenType, str(self.__displayMode)))
 
 # parseArgs - parses the provided arguments on script call.
 def parseArgs():
