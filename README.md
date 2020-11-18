@@ -22,7 +22,7 @@ A few flags are available upon execution, to bypass direct input into the applic
 If no flags are specified, prompts are given for the needed input.
 
 ## Java Source Code File Input
-This application will analyze any general structure of a Java source code file. Since this is not a syntax analyzer, 
+This application will analyze any general structure of a Java source code file. Since this is not a syntax analyzer, we can analyze an entire file with a class definition, or just a set of methods.
 
 ## Output
 Once a valid Java source code file is read, the file's contents are printed in the console. Then, as parsing and analysis are performed on the file, two token listings are provided. One listing replaces the lexemes within the original source printing with the identified tokens, providing a mirrored printing formatted exactly like the source. The other listing is formatted as:
